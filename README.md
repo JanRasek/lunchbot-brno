@@ -13,7 +13,7 @@ Small Python script that fetches lunch menus from configured restaurant pages an
 - Can create formatted HTML/PDF reports.
 - Can save smart fallback screenshots for failed restaurants: keyword sections, large images/PDF pages, and page slices.
 - Can save rendered visible text and HTML debug dumps to help tune parsers.
-- Posts the final text to Slack via Incoming Webhook.
+- Posts the final text to Slack via a Slack Workflow Builder "From a webhook" trigger (works even without permission to create a custom Slack app).
 - Has a `--dry-run` mode so you can preview output without posting.
 
 ## Setup
@@ -169,7 +169,7 @@ in the workflow file if you want a different local time.
 
 Some sites do not expose the daily menu as plain text. The fallback now saves multiple screenshot candidates instead of just one image: matching text sections, large images, PDF page renders, and page slices. If the menu is present in the rendered DOM, `--save-debug-pages` gives you a text/HTML dump that can be used to write a better parser. If the menu exists only inside an image, OCR can be added later, but it requires extra setup such as Tesseract on Windows.
 
-Incoming Webhooks can post text/blocks to Slack. Uploading the PDF or screenshots directly to Slack requires a Slack bot token and the Slack file upload API, which is a separate next step.
+A webhook (classic Incoming Webhook, or a Slack Workflow Builder "From a webhook" trigger) can only post text to a channel. Uploading the PDF or screenshots as a real Slack file attachment requires a Slack bot token with the `files:write` scope and the Slack file upload API, which needs a Slack app — the same permission a Workflow Builder webhook was set up specifically to avoid. If that's ever available, it would be a separate next step.
 
 
 ### Iframe menus

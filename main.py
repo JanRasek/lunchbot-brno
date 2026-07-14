@@ -20,8 +20,8 @@ from fetchers import capture_menu_screenshots, save_page_debug_dump
 
 logger = logging.getLogger("lunchbot")
 
-# Slack Incoming Webhooks reject a "text" payload over 40,000 characters. Leave headroom
-# for the truncation note itself.
+# Slack messages are capped at roughly 40,000 characters. Leave headroom for the
+# truncation note itself.
 SLACK_MAX_TEXT_LENGTH = 39000
 
 
@@ -39,13 +39,16 @@ def truncate_for_slack(message: str, max_length: int = SLACK_MAX_TEXT_LENGTH) ->
 
 
 def post_to_slack(webhook_url: str, message: str, timeout_seconds: int, max_attempts: int = 2) -> None:
+    # This posts to a Slack Workflow Builder "From a webhook" trigger, which expects the
+    # JSON body to match the trigger's declared data variable ("message"), not the
+    # classic Incoming Webhook "text" field.
     message = truncate_for_slack(message)
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
             response = requests.post(
                 webhook_url,
-                json={"text": message},
+                json={"message": message},
                 headers={"Content-Type": "application/json"},
                 timeout=timeout_seconds,
             )
