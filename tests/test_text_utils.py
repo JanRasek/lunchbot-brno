@@ -91,6 +91,56 @@ def test_structured_menu_rows_drops_allergen_numbers():
     assert all(row.text != "1,3,7" for row in rows)
 
 
+def test_structured_menu_rows_strips_redundant_category_from_dash_note():
+    # A duplicated DOM node can repeat the category label on the dash-prefixed note that
+    # follows a category row, e.g. U Třech Čertů's "Polévka" then "- Polévka: <soup>".
+    rows = structured_menu_rows(["Polévka", "- Polévka: Špenátová se slaninou"])
+    assert [(row.kind, row.text) for row in rows] == [
+        ("category", "Polévka"),
+        ("note", "Špenátová se slaninou"),
+    ]
+
+
+def test_structured_menu_rows_splits_inline_category_dish_line():
+    # Some sources (Zomato widgets, Na Knoflíku) write the category and the first dish
+    # on one line, e.g. "Polévka: Mexická fazolová ..." or "Polévka 1: Česnečka".
+    rows = structured_menu_rows(["Polévka 1: Česnečka 19 Kč"])
+    assert [(row.kind, row.text, row.price) for row in rows] == [
+        ("category", "Polévka", ""),
+        ("item", "Česnečka", "19 Kč"),
+    ]
+
+
+def test_structured_menu_rows_strips_leading_source_site_list_numbers():
+    rows = structured_menu_rows(["1) PHAD SE-W - kuřecí nudle 194 Kč"])
+    assert rows[0].text == "PHAD SE-W - kuřecí nudle"
+
+
+def test_structured_menu_rows_drops_bare_list_marker_line():
+    # A source site sometimes puts just "1." on its own line before the dish text.
+    rows = structured_menu_rows(["1.", "Mango Lassi 55 Kč"])
+    assert [(row.kind, row.text) for row in rows] == [("item", "Mango Lassi")]
+
+
+def test_structured_menu_rows_strips_trailing_allergen_codes():
+    rows = structured_menu_rows(["Hovězí guláš s bramboráčky(1,3,7,12) 199 Kč"])
+    assert rows[0].text == "Hovězí guláš s bramboráčky"
+
+
+def test_structured_menu_rows_drops_zomato_widget_header_noise():
+    lines = [
+        "Daily menu",
+        "Tuesday, 14 July (Dnes)",
+        "Polévka: Mexická fazolová s hovězím masem",
+        "1. 350g Pečená vepřová žebra 199 Kč",
+    ]
+    rows = structured_menu_rows(lines)
+    assert [(row.kind, row.text, row.price) for row in rows] == [
+        ("category", "Polévka", ""),
+        ("item", "Mexická fazolová s hovězím masem - 350g Pečená vepřová žebra", "199 Kč"),
+    ]
+
+
 def test_compact_menu_rows_for_slack_numbers_items_sequentially():
     lines = [
         "Polévka",
@@ -155,7 +205,7 @@ def test_format_slack_summary_message_is_compact_with_report_link():
     assert message == "\n".join(
         [
             "🍽️ *Polední menu pro Úterý 07.07.2026*",
-            "📄 <https://example.github.io/report/latest.pdf|Otevřít celé menu (PDF)>",
+            "📄 Denní menu: https://example.github.io/report/latest.pdf",
             "",
             "✅ *#1* Test Restaurant",
             "⚠️ *#2* Broken Restaurant",

@@ -36,6 +36,17 @@ NOISE_PATTERNS = [
     re.compile(r"^image", re.I),
     re.compile(r"^close$", re.I),
     re.compile(r"^vyberte stránku$", re.I),
+    # Widget/page chrome that sometimes ends up inside the extracted menu section
+    # (e.g. Zomato's "Daily menu" heading, order-online buttons, opening hours).
+    re.compile(r"^daily menu$", re.I),
+    re.compile(r"^«?\s*dnes\s*»?$", re.I),
+    re.compile(r"^objednat\s+j[ií]dlo$", re.I),
+    re.compile(r"^online$", re.I),
+    re.compile(r"^\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}$"),
+    re.compile(
+        r"^(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+\d{1,2}\s+[A-Za-zÁ-ž]+(?:\s+\(.*\))?$",
+        re.I,
+    ),
 ]
 
 PRICE_RE = re.compile(r"(?P<price>\b\d{2,4}\s*(?:Kč|Kc|CZK|,-)\b)", re.I)
@@ -284,11 +295,14 @@ def extract_current_date_section(lines: Sequence[str], target_date: date) -> lis
 def _looks_like_allergen_or_number(line: str) -> bool:
     """Drop lines that are usually allergen-only fragments after imperfect extraction.
 
-    Examples: "1,3,7", ")", "T 1)", or a standalone menu index "1".
+    Examples: "1,3,7", ")", "T 1)", a standalone menu index "1", or a bare list marker
+    "1." / "2)" left on its own line by a source site's own numbering.
     We intentionally do not match portions such as "0,22l" or "250g".
     """
     value = normalize_whitespace(line)
     if re.fullmatch(r"\d+", value):
+        return True
+    if re.fullmatch(r"\d{1,2}[.)]", value):
         return True
     if re.fullmatch(r"[\d,\s.()]+", value) and any(char in value for char in ",()"):
         return True
@@ -338,11 +352,60 @@ def _looks_like_category(line: str) -> bool:
     ))
 
 
+INLINE_CATEGORY_RE = re.compile(
+    r"^(?P<label>" + "|".join(re.escape(keyword) for keyword in CATEGORY_KEYWORDS) + r")"
+    r"\s*\d*\s*:\s*(?P<rest>.+)$",
+    re.I,
+)
+
+# Trailing allergen-code fragments like "(1,3,7)" or "( 1,3,7,10,12 )" glued onto a dish
+# name. Only matches parens whose content is purely numeric, so descriptive parentheticals
+# such as "(rajská polévka)" are left alone.
+TRAILING_ALLERGEN_CODES_RE = re.compile(r"\(\s*\d+(?:\s*,\s*\d+)*\s*\)\s*$")
+
+# A source site's own list numbering ("1. ", "2) ") that duplicates our own auto-generated
+# #1/#2/#3 index and should not leak into the dish text itself.
+LEADING_LIST_NUMBER_RE = re.compile(r"^\d{1,2}[.)]\s+")
+
+# A leftover bullet marker after the list number is stripped, e.g. "1. - + Dish" -> "- + Dish".
+LEADING_BULLET_RE = re.compile(r"^[-+\s]+")
+
+# A stray separator left over once a price has been split off a line, e.g. "Dish name –".
+TRAILING_DASH_RE = re.compile(r"[\s\-–—]+$")
+
+
+def _split_inline_category(line: str) -> tuple[str, str] | None:
+    """Split a "Category: rest of line" fragment into its own category + remainder.
+
+    Some sources (Zomato widgets, Na Knoflíku) write the category and the first dish on
+    one combined line, e.g. "Polévka: Mexická fazolová ..." or "Polévka 1: Česnečka". Left
+    alone, that text gets swallowed into whichever item happens to have the next price,
+    making that restaurant's report look different from ones with a clean category line.
+    """
+    match = INLINE_CATEGORY_RE.match(line.strip())
+    if not match:
+        return None
+    rest = match.group("rest").strip()
+    if not rest:
+        return None
+    label = match.group("label")
+    return label[:1].upper() + label[1:].lower(), rest
+
+
+def _clean_item_part(value: str) -> str:
+    value = normalize_whitespace(value).strip(" :")
+    value = LEADING_LIST_NUMBER_RE.sub("", value)
+    value = LEADING_BULLET_RE.sub("", value)
+    value = TRAILING_ALLERGEN_CODES_RE.sub("", value).rstrip()
+    value = TRAILING_DASH_RE.sub("", value)
+    return value.strip()
+
+
 def _join_item_parts(parts: Sequence[str]) -> str:
     cleaned = []
     previous = ""
     for part in parts:
-        part = normalize_whitespace(part).strip(" :")
+        part = _clean_item_part(part)
         if not part or part == previous or _looks_like_allergen_or_number(part):
             continue
         previous = part
@@ -373,6 +436,13 @@ def structured_menu_rows(lines: Sequence[str], max_items: int | None = None) -> 
         if not line or _looks_like_allergen_or_number(line):
             continue
 
+        inline_category = _split_inline_category(line)
+        if inline_category:
+            category_label, remainder = inline_category
+            flush_unpriced()
+            rows.append(StructuredMenuRow(kind="category", text=category_label))
+            line = remainder
+
         price_match = PRICE_RE.search(line)
         if price_match:
             before_price = normalize_whitespace(line[: price_match.start()]).strip(" :-")
@@ -390,7 +460,13 @@ def structured_menu_rows(lines: Sequence[str], max_items: int | None = None) -> 
             continue
 
         if line.startswith("-") and not current_parts and rows and rows[-1].kind == "category":
-            rows.append(StructuredMenuRow(kind="note", text=line.lstrip("- ").strip()))
+            note_text = line.lstrip("- ").strip()
+            # A duplicated DOM node can repeat the category label here, e.g.
+            # "- Polévka: Špenátová se slaninou" right after a "Polévka" category row.
+            redundant_category = _split_inline_category(note_text)
+            if redundant_category:
+                note_text = redundant_category[1]
+            rows.append(StructuredMenuRow(kind="note", text=note_text))
             continue
 
         if _looks_like_category(line):
@@ -485,7 +561,10 @@ def format_slack_summary_message(results, target_date: date, report_url: str = "
     parts = [f"🍽️ *Polední menu pro {weekday} {target_date.strftime('%d.%m.%Y')}*"]
 
     if report_url:
-        parts.append(f"📄 <{report_url}|Otevřít celé menu (PDF)>")
+        # Slack Workflow Builder inserts this variable as plain text, not mrkdwn, so the
+        # <url|label> hyperlink syntax shows up unrendered. A bare URL still gets
+        # auto-linked by Slack's own link detection, just without custom link text.
+        parts.append(f"📄 Denní menu: {report_url}")
 
     parts.append("")
     for index, result in enumerate(results, start=1):
