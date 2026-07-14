@@ -1,5 +1,7 @@
 name: Post lunch menu to Slack
 
+# Re-touched to force GitHub to (re-)register this workflow after it failed to show up
+# under Actions the first time it was pushed.
 on:
   schedule:
     # 08:30 UTC = ~09:30 Prague time in winter (CET) / ~10:30 in summer (CEST).
