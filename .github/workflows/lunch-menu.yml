@@ -2,9 +2,12 @@ name: Post lunch menu to Slack
 
 on:
   schedule:
-    # 08:30 UTC = ~09:30 Prague time in winter (CET) / ~10:30 in summer (CEST).
-    # Cron day-of-week: 1-5 = Monday-Friday, so this never fires on weekends.
-    - cron: "30 8 * * 1-5"
+    # GitHub Actions cron is always UTC and never shifts for daylight saving, so a single
+    # cron entry can't stay pinned to a fixed *local* time year-round. Instead we register
+    # both UTC offsets that correspond to 10:45 Prague time, and the check-schedule job
+    # below figures out which one is currently correct and skips the other.
+    - cron: "45 9 * * 1-5" # 10:45 CET (winter, UTC+1)
+    - cron: "45 8 * * 1-5" # 10:45 CEST (summer, UTC+2)
   workflow_dispatch: {}
 
 permissions:
@@ -13,7 +16,45 @@ permissions:
   id-token: write
 
 jobs:
+  check-schedule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      should_run: ${{ steps.dst-check.outputs.should_run }}
+    steps:
+      - name: Determine whether this is the correct DST slot for 10:45 Prague time
+        id: dst-check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ["EVENT_NAME"]
+          event_schedule = os.environ.get("EVENT_SCHEDULE", "")
+
+          if event_name != "schedule":
+              # Manual runs (workflow_dispatch) always proceed; only scheduled
+              # runs need to pick the one matching offset and skip the other.
+              should_run = True
+          else:
+              now_prague = datetime.now(ZoneInfo("Europe/Prague"))
+              is_dst = now_prague.dst() != timedelta(0)
+              expected_cron = "45 8 * * 1-5" if is_dst else "45 9 * * 1-5"
+              should_run = event_schedule == expected_cron
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"should_run={'true' if should_run else 'false'}\n")
+
+          print(f"event_name={event_name} event_schedule={event_schedule!r} should_run={should_run}")
+          PYEOF
+
   post-menu:
+    needs: check-schedule
+    if: needs.check-schedule.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
