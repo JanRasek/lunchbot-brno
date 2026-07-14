@@ -1,0 +1,35 @@
+name: Post lunch menu to Slack
+
+on:
+  schedule:
+    # 08:30 UTC = ~09:30 Prague time in winter (CET) / ~10:30 in summer (CEST).
+    # Cron day-of-week: 1-5 = Monday-Friday, so this never fires on weekends.
+    - cron: "30 8 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  post-menu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Post lunch menu
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python main.py

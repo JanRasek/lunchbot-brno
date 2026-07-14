@@ -1,0 +1,230 @@
+# Lunchbot for Brno daily menus
+
+Small Python script that fetches lunch menus from configured restaurant pages and posts a formatted summary to Slack.
+
+## What it does
+
+- Fetches normal HTML menus.
+- Extracts today's Czech weekday section from weekly menus.
+- Extracts menu text from linked PDFs, when a page links to a PDF.
+- Falls back to Playwright for pages that fail with a normal HTTP request.
+- Groups meal fragments so the meal text and price are shown on the same row in Slack/reports.
+- Adds global item indexes like `#1`, `#2`, `#3` to meal rows so people can vote by number.
+- Can create formatted HTML/PDF reports.
+- Can save smart fallback screenshots for failed restaurants: keyword sections, large images/PDF pages, and page slices.
+- Can save rendered visible text and HTML debug dumps to help tune parsers.
+- Posts the final text to Slack via Incoming Webhook.
+- Has a `--dry-run` mode so you can preview output without posting.
+
+## Setup
+
+```bash
+cd lunchbot
+python -m venv .venv
+
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+
+# macOS/Linux:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+On Windows PowerShell, use this instead of `cp`:
+
+```powershell
+copy .env.example .env
+```
+
+Edit `.env` and set `SLACK_WEBHOOK_URL`.
+
+For Playwright fallback, PDF export, and screenshot support, run once after installing requirements:
+
+```bash
+python -m playwright install chromium
+```
+
+## Run locally
+
+Preview only:
+
+```bash
+python main.py --dry-run
+```
+
+Post to Slack:
+
+```bash
+python main.py
+```
+
+Test a specific date:
+
+```bash
+python main.py --dry-run --date 2026-07-07
+```
+
+Run only one restaurant by name substring:
+
+```bash
+python main.py --dry-run --only solnici
+```
+
+## Reports
+
+Save a formatted HTML report:
+
+```bash
+python main.py --dry-run --save-html
+```
+
+Save a formatted PDF report:
+
+```bash
+python main.py --dry-run --save-pdf
+```
+
+Save smart fallback screenshots for restaurants that need manual checks, and include those screenshots in the report:
+
+```bash
+python main.py --dry-run --save-pdf --save-screenshots
+```
+
+Save rendered visible text and HTML for failed restaurants. This helps when a screenshot shows the menu but the parser did not find it:
+
+```bash
+python main.py --dry-run --save-pdf --save-screenshots --save-debug-pages
+```
+
+The output will be created in:
+
+```text
+reports/lunch_menu_YYYY-MM-DD.html
+reports/lunch_menu_YYYY-MM-DD.pdf
+reports/screenshots/*.png
+reports/debug/*-visible-text.txt
+reports/debug/*-rendered.html
+```
+
+## Notes about iframe/weekly menus
+
+The parser handles iframe-based menus by reading rendered iframe contents with Playwright.
+When a page contains several upcoming days, extraction stops at the next weekday/date heading,
+so a heading like `Úterý 7.7.2026` should return only Tuesday's menu, not Wednesday-Friday too.
+
+## Scheduling examples
+
+### Windows Task Scheduler
+
+Create a task that runs daily around 10:30 or 11:00.
+
+Program:
+
+```text
+C:\path\to\lunchbot\.venv\Scripts\python.exe
+```
+
+Arguments:
+
+```text
+C:\path\to\lunchbot\main.py
+```
+
+Start in:
+
+```text
+C:\path\to\lunchbot
+```
+
+To also generate a PDF with screenshots, use arguments like this instead:
+
+```text
+C:\path\to\lunchbot\main.py --save-pdf --save-screenshots
+```
+
+### Linux cron
+
+```cron
+30 10 * * 1-5 cd /path/to/lunchbot && /path/to/lunchbot/.venv/bin/python main.py
+```
+
+### GitHub Actions
+
+`.github/workflows/lunch-menu.yml` runs the bot on a schedule (weekdays only, via cron's
+day-of-week field) once this repo is pushed to GitHub. To enable it:
+
+1. Push this repo to GitHub.
+2. Go to the repo's **Settings → Secrets and variables → Actions** and add a repository
+   secret named `SLACK_WEBHOOK_URL` with your webhook URL.
+3. That's it. The workflow also has a manual trigger (**Actions → Post lunch menu to
+   Slack → Run workflow**) so you can test it without waiting for the schedule.
+
+The cron expression (`30 8 * * 1-5`) fires at 08:30 UTC, which is 09:30/10:30 Prague time
+depending on daylight saving (GitHub Actions cron doesn't shift for DST). Adjust the hour
+in the workflow file if you want a different local time.
+
+## Notes
+
+Some sites do not expose the daily menu as plain text. The fallback now saves multiple screenshot candidates instead of just one image: matching text sections, large images, PDF page renders, and page slices. If the menu is present in the rendered DOM, `--save-debug-pages` gives you a text/HTML dump that can be used to write a better parser. If the menu exists only inside an image, OCR can be added later, but it requires extra setup such as Tesseract on Windows.
+
+Incoming Webhooks can post text/blocks to Slack. Uploading the PDF or screenshots directly to Slack requires a Slack bot token and the Slack file upload API, which is a separate next step.
+
+
+### Iframe menus
+
+Some restaurant pages embed the daily menu in an iframe. The bot now has an iframe-aware fallback for Buddha and the screenshot/debug tools also inspect Playwright `page.frames`. If a parser cannot find menu text, run:
+
+```powershell
+python main.py --dry-run --save-pdf --save-screenshots --save-debug-pages --only buddha
+```
+
+Then check `reports/debug/*visible-text.txt`; it now includes sections named `IFRAME ...` so you can confirm whether the menu text is available as real HTML or only as an image.
+
+
+## Restaurant filters
+
+You can now use stable keys with `--only`, for example:
+
+```powershell
+python main.py --dry-run --only vlk
+python main.py --dry-run --only orel
+python main.py --dry-run --only buddha
+```
+
+For Dřevěný Vlk/Orel the bot uses the weekly-menu subpages, because the real Zomato daily-menu iframe is not on the homepage.
+
+### Zomato iframe overrides for Dřevěný Orel/Vlk
+
+The Vlk iframe from DevTools uses:
+
+```env
+ZOMATO_VLK_ENTITY_ID=16507597
+```
+
+That value is already included in the script for Vlk. Orel is intentionally not hardcoded to the same entity id, because using the same id makes Orel and Vlk return identical menus.
+
+If you find Orel's real iframe in DevTools, add it to `.env` like this:
+
+```env
+ZOMATO_OREL_ENTITY_ID=16506896
+```
+
+or paste the full iframe URL:
+
+```env
+ZOMATO_OREL_URL=https://www.zomato.com/widgets/daily_menu.php?entity_id=16506896&width=100%25&height=1000px
+```
+
+If both restaurants really do intentionally share the same Zomato widget, you can force that by setting:
+
+```env
+ZOMATO_OREL_ENTITY_ID=16507597
+```
+
+
+
+## Added restaurant
+
+- La Famiglia (`--only lafamiglia`) from https://lafamigliabrno.cz/denni-menu/
