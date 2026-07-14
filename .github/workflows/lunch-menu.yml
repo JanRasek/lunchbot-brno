@@ -1,7 +1,5 @@
 name: Post lunch menu to Slack
 
-# Re-touched to force GitHub to (re-)register this workflow after it failed to show up
-# under Actions the first time it was pushed.
 on:
   schedule:
     # 08:30 UTC = ~09:30 Prague time in winter (CET) / ~10:30 in summer (CEST).
@@ -11,11 +9,16 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 jobs:
   post-menu:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,4 +37,18 @@ jobs:
       - name: Post lunch menu
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: python main.py
+        run: python main.py --save-pdf --report-url "https://janrasek.github.io/lunchbot-brno/latest.pdf"
+
+      - name: Prepare Pages site
+        run: |
+          mkdir -p site
+          cp reports/lunch_menu_*.pdf site/latest.pdf
+          cp reports/lunch_menu_*.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

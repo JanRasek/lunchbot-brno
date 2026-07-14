@@ -5,6 +5,7 @@ from text_utils import (
     compact_menu_rows_for_slack,
     extract_today_weekday_section,
     format_slack_message,
+    format_slack_summary_message,
     looks_like_date_heading,
     looks_like_weekday_heading,
     structured_menu_rows,
@@ -130,3 +131,43 @@ def test_format_slack_message_marks_ok_and_failed_restaurants():
     assert "✅ *#1 Test Restaurant*" in message
     assert "⚠️ *#2 Broken Restaurant*" in message
     assert "Could not find today's menu section in page text." in message
+
+
+def test_format_slack_summary_message_is_compact_with_report_link():
+    ok_result = MenuResult(
+        restaurant="Test Restaurant",
+        url="https://example.com",
+        status="ok",
+        lines=["Polévka", "Hovězí vývar 35 Kč"],
+    )
+    failed_result = MenuResult(
+        restaurant="Broken Restaurant",
+        url="https://example.com/broken",
+        status="failed",
+        lines=[],
+        error="Could not find today's menu section in page text.",
+    )
+
+    message = format_slack_summary_message(
+        [ok_result, failed_result], TUESDAY, report_url="https://example.github.io/report/latest.pdf"
+    )
+
+    assert message == "\n".join(
+        [
+            "🍽️ *Polední menu pro Úterý 07.07.2026*",
+            "📄 <https://example.github.io/report/latest.pdf|Otevřít celé menu (PDF)>",
+            "",
+            "✅ *#1* Test Restaurant",
+            "⚠️ *#2* Broken Restaurant",
+        ]
+    )
+    # The compact summary must not leak per-item menu text/prices into Slack.
+    assert "Hovězí vývar" not in message
+
+
+def test_format_slack_summary_message_without_report_url_omits_link_line():
+    ok_result = MenuResult(restaurant="Test Restaurant", url="https://example.com", status="ok", lines=[])
+
+    message = format_slack_summary_message([ok_result], TUESDAY)
+
+    assert "📄" not in message

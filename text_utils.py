@@ -472,3 +472,24 @@ def format_slack_message(results, target_date: date) -> str:
         restaurant_index += 1
 
     return "\n".join(parts)
+
+
+def format_slack_summary_message(results, target_date: date, report_url: str = "") -> str:
+    """Build a short Slack message: one line per restaurant, plus a link to the full report.
+
+    Unlike format_slack_message, this intentionally leaves out per-item menu text/prices
+    so the channel gets a glanceable status list instead of a long wall of text; the full
+    breakdown lives in the linked PDF/HTML report instead.
+    """
+    weekday = CZECH_WEEKDAYS[target_date.weekday()]
+    parts = [f"🍽️ *Polední menu pro {weekday} {target_date.strftime('%d.%m.%Y')}*"]
+
+    if report_url:
+        parts.append(f"📄 <{report_url}|Otevřít celé menu (PDF)>")
+
+    parts.append("")
+    for index, result in enumerate(results, start=1):
+        status_icon = "✅" if result.status == "ok" else "⚠️"
+        parts.append(f"{status_icon} *#{index}* {result.restaurant}")
+
+    return "\n".join(parts)

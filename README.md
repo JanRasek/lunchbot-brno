@@ -157,13 +157,24 @@ day-of-week field) once this repo is pushed to GitHub. To enable it:
 
 1. Push this repo to GitHub.
 2. Go to the repo's **Settings → Secrets and variables → Actions** and add a repository
-   secret named `SLACK_WEBHOOK_URL` with your webhook URL.
+   secret named `SLACK_WEBHOOK_URL` with your webhook URL (a Slack Workflow Builder "From
+   a webhook" trigger works without needing permission to create a custom Slack app —
+   see the note in `.env.example`).
 3. That's it. The workflow also has a manual trigger (**Actions → Post lunch menu to
    Slack → Run workflow**) so you can test it without waiting for the schedule.
 
 The cron expression (`30 8 * * 1-5`) fires at 08:30 UTC, which is 09:30/10:30 Prague time
 depending on daylight saving (GitHub Actions cron doesn't shift for DST). Adjust the hour
 in the workflow file if you want a different local time.
+
+### Posted message + hosted report
+
+Rather than dumping every menu item into Slack as plain text, the workflow generates the
+PDF/HTML report, publishes it via GitHub Pages (`https://<user>.github.io/<repo>/`), and
+posts a short summary that links to it — one line per restaurant, plus a link to the full
+PDF. This only works because the repo is **public** (GitHub Pages on a private repo needs
+a paid plan). If you fork this to a private repo, drop `--report-url` from the workflow's
+`python main.py` call and it falls back to the old inline text format automatically.
 
 ## Notes
 

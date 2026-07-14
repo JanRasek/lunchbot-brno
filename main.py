@@ -14,7 +14,7 @@ import requests
 from dotenv import load_dotenv
 
 from restaurants import RESTAURANTS
-from text_utils import format_slack_message
+from text_utils import format_slack_message, format_slack_summary_message
 from report_utils import write_html_report, write_pdf_report
 from fetchers import capture_menu_screenshots, save_page_debug_dump
 
@@ -140,6 +140,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-pdf", action="store_true", help="Save a nicely formatted PDF report into the reports folder. Requires Playwright Chromium.")
     parser.add_argument("--report-dir", default="reports", help="Folder where HTML/PDF reports are saved. Default: reports.")
     parser.add_argument(
+        "--report-url",
+        default="",
+        help="Public URL of the hosted PDF/HTML report. When set, the Slack message links "
+        "to it instead of listing every menu item inline.",
+    )
+    parser.add_argument(
         "--save-screenshots",
         action="store_true",
         help="For failed restaurants, save smart screenshots: keyword sections, large images, PDF pages, and page slices.",
@@ -200,7 +206,7 @@ def main() -> int:
     if args.save_debug_pages:
         attach_debug_dumps(results, args.report_dir, timeout_seconds)
 
-    message = format_slack_message(results, target_date)
+    summary_message = format_slack_summary_message(results, target_date, args.report_url)
 
     if args.save_html or args.save_pdf:
         try:
@@ -217,7 +223,9 @@ def main() -> int:
             logger.warning("Could not save PDF report: %s", exc)
 
     if args.dry_run:
-        print(message)
+        print(format_slack_message(results, target_date))
+        print("\n--- Slack message that would be posted ---\n")
+        print(summary_message)
         return 0
 
     webhook_url = os.getenv("SLACK_WEBHOOK_URL")
@@ -225,7 +233,7 @@ def main() -> int:
         logger.error("Missing SLACK_WEBHOOK_URL. Add it to .env or run with --dry-run.")
         return 2
 
-    post_to_slack(webhook_url, message, timeout_seconds)
+    post_to_slack(webhook_url, summary_message, timeout_seconds)
     logger.info("Lunch menu posted to Slack.")
     return 0
 
