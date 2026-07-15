@@ -171,10 +171,18 @@ in the workflow file if you want a different local time.
 
 Rather than dumping every menu item into Slack as plain text, the workflow generates the
 PDF/HTML report, publishes it via GitHub Pages (`https://<user>.github.io/<repo>/`), and
-posts a short summary that links to it — one line per restaurant, plus a link to the full
-PDF. This only works because the repo is **public** (GitHub Pages on a private repo needs
-a paid plan). If you fork this to a private repo, drop `--report-url` from the workflow's
-`python main.py` call and it falls back to the old inline text format automatically.
+posts a short summary — one line per restaurant — alongside the report URL. This only
+works because the repo is **public** (GitHub Pages on a private repo needs a paid plan).
+If you fork this to a private repo, drop `--report-url` from the workflow's `python
+main.py` call; the summary is posted either way, just with an empty `report_url`.
+
+`--report-url` is sent to Slack as its own `report_url` trigger variable rather than
+being embedded as text, because Slack Workflow Builder inserts variables as plain text,
+not mrkdwn — a `<url|label>` link written into the message text would show up
+unrendered. To get a real "Denní menu" hyperlink instead of a bare auto-linked URL, add
+`report_url` as a second variable on the webhook trigger in Workflow Builder, then in the
+message step type "Denní menu" and use Slack's rich-text link tool to point it at that
+variable.
 
 ## Notes
 

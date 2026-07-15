@@ -38,17 +38,22 @@ def truncate_for_slack(message: str, max_length: int = SLACK_MAX_TEXT_LENGTH) ->
     return message[:cutoff].rstrip() + "\n\n_Zpráva byla zkrácena, protože přesáhla limit Slacku._"
 
 
-def post_to_slack(webhook_url: str, message: str, timeout_seconds: int, max_attempts: int = 2) -> None:
+def post_to_slack(
+    webhook_url: str, message: str, timeout_seconds: int, report_url: str = "", max_attempts: int = 2
+) -> None:
     # This posts to a Slack Workflow Builder "From a webhook" trigger, which expects the
-    # JSON body to match the trigger's declared data variable ("message"), not the
-    # classic Incoming Webhook "text" field.
+    # JSON body to match the trigger's declared data variables ("message" and
+    # "report_url"), not the classic Incoming Webhook "text" field. report_url is sent
+    # separately, rather than embedded in message, so the Workflow's message step can
+    # hyperlink a fixed "Denní menu" label to it via Slack's own rich-text link tool
+    # (variables inserted into plain message text render literally, not as mrkdwn links).
     message = truncate_for_slack(message)
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
             response = requests.post(
                 webhook_url,
-                json={"message": message},
+                json={"message": message, "report_url": report_url},
                 headers={"Content-Type": "application/json"},
                 timeout=timeout_seconds,
             )
@@ -206,7 +211,7 @@ def main() -> int:
     if args.save_debug_pages:
         attach_debug_dumps(results, args.report_dir, timeout_seconds)
 
-    summary_message = format_slack_summary_message(results, target_date, args.report_url)
+    summary_message = format_slack_summary_message(results, target_date)
 
     if args.save_html or args.save_pdf:
         try:
@@ -226,6 +231,7 @@ def main() -> int:
         print(format_slack_message(results, target_date))
         print("\n--- Slack message that would be posted ---\n")
         print(summary_message)
+        print(f"\n--- report_url variable that would be posted ---\n\n{args.report_url}")
         return 0
 
     webhook_url = os.getenv("SLACK_WEBHOOK_URL")
@@ -233,7 +239,7 @@ def main() -> int:
         logger.error("Missing SLACK_WEBHOOK_URL. Add it to .env or run with --dry-run.")
         return 2
 
-    post_to_slack(webhook_url, summary_message, timeout_seconds)
+    post_to_slack(webhook_url, summary_message, timeout_seconds, report_url=args.report_url)
     logger.info("Lunch menu posted to Slack.")
     return 0
 

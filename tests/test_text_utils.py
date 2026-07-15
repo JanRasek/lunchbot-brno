@@ -183,7 +183,7 @@ def test_format_slack_message_marks_ok_and_failed_restaurants():
     assert "Could not find today's menu section in page text." in message
 
 
-def test_format_slack_summary_message_is_compact_with_report_link():
+def test_format_slack_summary_message_is_compact():
     ok_result = MenuResult(
         restaurant="Test Restaurant",
         url="https://example.com",
@@ -198,14 +198,11 @@ def test_format_slack_summary_message_is_compact_with_report_link():
         error="Could not find today's menu section in page text.",
     )
 
-    message = format_slack_summary_message(
-        [ok_result, failed_result], TUESDAY, report_url="https://example.github.io/report/latest.pdf"
-    )
+    message = format_slack_summary_message([ok_result, failed_result], TUESDAY)
 
     assert message == "\n".join(
         [
             "🍽️ *Polední menu pro Úterý 07.07.2026*",
-            "📄 Denní menu: https://example.github.io/report/latest.pdf",
             "",
             "✅ *#1* Test Restaurant",
             "⚠️ *#2* Broken Restaurant",
@@ -213,11 +210,5 @@ def test_format_slack_summary_message_is_compact_with_report_link():
     )
     # The compact summary must not leak per-item menu text/prices into Slack.
     assert "Hovězí vývar" not in message
-
-
-def test_format_slack_summary_message_without_report_url_omits_link_line():
-    ok_result = MenuResult(restaurant="Test Restaurant", url="https://example.com", status="ok", lines=[])
-
-    message = format_slack_summary_message([ok_result], TUESDAY)
-
+    # The report link is sent as its own "report_url" trigger variable, not embedded here.
     assert "📄" not in message

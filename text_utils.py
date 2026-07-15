@@ -550,23 +550,22 @@ def format_slack_message(results, target_date: date) -> str:
     return "\n".join(parts)
 
 
-def format_slack_summary_message(results, target_date: date, report_url: str = "") -> str:
-    """Build a short Slack message: one line per restaurant, plus a link to the full report.
+def format_slack_summary_message(results, target_date: date) -> str:
+    """Build a short Slack message: one line per restaurant.
 
     Unlike format_slack_message, this intentionally leaves out per-item menu text/prices
     so the channel gets a glanceable status list instead of a long wall of text; the full
     breakdown lives in the linked PDF/HTML report instead.
+
+    The report link itself is deliberately not embedded in this text: Slack Workflow
+    Builder inserts variables as plain text, not mrkdwn, so a "<url|label>" hyperlink
+    written here would show up unrendered. Instead, the report URL is sent to Slack as
+    its own "report_url" trigger variable (see post_to_slack in main.py), and the
+    Workflow's message step hyperlinks a fixed "Denní menu" label to that variable using
+    Slack's own rich-text link tool.
     """
     weekday = CZECH_WEEKDAYS[target_date.weekday()]
-    parts = [f"🍽️ *Polední menu pro {weekday} {target_date.strftime('%d.%m.%Y')}*"]
-
-    if report_url:
-        # Slack Workflow Builder inserts this variable as plain text, not mrkdwn, so the
-        # <url|label> hyperlink syntax shows up unrendered. A bare URL still gets
-        # auto-linked by Slack's own link detection, just without custom link text.
-        parts.append(f"📄 Denní menu: {report_url}")
-
-    parts.append("")
+    parts = [f"🍽️ *Polední menu pro {weekday} {target_date.strftime('%d.%m.%Y')}*", ""]
     for index, result in enumerate(results, start=1):
         status_icon = "✅" if result.status == "ok" else "⚠️"
         parts.append(f"{status_icon} *#{index}* {result.restaurant}")
