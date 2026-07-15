@@ -163,11 +163,17 @@ day-of-week field) once this repo is pushed to GitHub. To enable it:
 3. That's it. The workflow also has a manual trigger (**Actions → Post lunch menu to
    Slack → Run workflow**) so you can test it without waiting for the schedule.
 
-The workflow registers two cron entries (`20 9 * * 1-5` and `20 8 * * 1-5`) so it stays
-pinned to 10:20 Prague time year-round; the `check-schedule` job figures out which one is
+The workflow registers two cron entries (`0 8 * * 1-5` and `0 7 * * 1-5`) so it stays
+pinned to 09:00 Prague time year-round; the `check-schedule` job figures out which one is
 currently correct for DST and skips the other (GitHub Actions cron is always UTC and
 never shifts for daylight saving on its own). Adjust both cron entries and the
 `expected_cron` values in `check-schedule` together if you want a different local time.
+
+Note that GitHub's `on.schedule` trigger is best-effort and can run significantly late —
+a test run fired 87 minutes after its target time. 09:00 was chosen to leave a large
+buffer before lunch even if that happens again; use the manual trigger (or an external
+scheduler calling the GitHub API's `workflow_dispatch` endpoint) if you need the post to
+land at a precise time.
 
 ### Posted message + hosted report
 
