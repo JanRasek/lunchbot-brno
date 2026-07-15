@@ -39,6 +39,7 @@ def _render_menu_rows(lines: Sequence[str]) -> str:
 
     parts: list[str] = ['<div class="menu-table">']
     item_index = 1
+    previous_kind = ""
     for row in rows:
         if row.kind == "category":
             parts.append(
@@ -55,8 +56,19 @@ def _render_menu_rows(lines: Sequence[str]) -> str:
                 '</div>'
             )
             item_index += 1
+        elif row.kind == "note" and previous_kind == "category":
+            # An unpriced dish right after a category heading (e.g. a soup that's
+            # included in the meal price, with no Kč of its own) should still read as
+            # a menu item, not as a smaller italic aside — otherwise restaurants whose
+            # soup has no listed price look inconsistent with ones where it does.
+            parts.append(
+                '<div class="food-row food-row--unpriced">'
+                f'<span class="food-name">{escape(row.text)}</span>'
+                '</div>'
+            )
         else:
             parts.append(f'<div class="note-row">{escape(row.text)}</div>')
+        previous_kind = row.kind
     parts.append("</div>")
     return "\n".join(parts)
 
@@ -380,6 +392,7 @@ def build_html_report(results, target_date: date) -> str:
         }}
         .food-row:nth-child(even) {{ background: #fffaf2; }}
         .food-row:last-child {{ border-bottom: 0; }}
+        .food-row--unpriced {{ grid-template-columns: 1fr; }}
         .food-index {{
             align-self: start;
             justify-self: start;

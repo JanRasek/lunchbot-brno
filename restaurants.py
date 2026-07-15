@@ -1571,10 +1571,19 @@ def _ucertu_clean_section(section: list[str]) -> list[str]:
     The page contains a full a-la-carte menu before the lunch menu and a weekday
     navigation list inside the lunch section. This parser keeps only the selected
     weekday section from the daily menu and removes allergen-only rows.
+
+    The soup is rendered as two separate DOM lines ("Polévka" then "- <name>" on the
+    next line), not "Polévka - <name>" on one line. Header insertion has to track a
+    small state machine: once the soup name has been consumed, the next real content
+    line is the first main course, and "Hlavní chody" must be inserted right before
+    it (inserting it only once a Kč price is seen, as the old code did, put the
+    header after the first dish's name instead of before it, and left that dish's
+    price stranded with nothing to attach to).
     """
     cleaned: list[str] = []
     previous = ""
     soup_added = False
+    soup_name_added = False
     main_added = False
 
     for line in clean_lines(section):
@@ -1591,23 +1600,33 @@ def _ucertu_clean_section(section: list[str]) -> list[str]:
         if c_line in {"denni menu", "pondeli", "utery", "streda", "ctvrtek", "patek", "sobota", "nedele"}:
             continue
 
-        # Soup line usually looks like: "Polévka - Špenátová se slaninou 1,6".
-        if c_line.startswith("polevka"):
-            if not soup_added:
-                cleaned.append("Polévka")
-                soup_added = True
-            soup_text = re.sub(r"^pol[eé]vka\s*[-:]\s*", "", line, flags=re.I).strip()
-            # Remove trailing allergen list from soup.
-            soup_text = re.sub(r"\s+\d+(?:\s*,\s*\d+)*\s*$", "", soup_text).strip()
-            if soup_text:
-                cleaned.append(soup_text)
+        # Meal rows sometimes start with just ')' due to the site's markup.
+        line = re.sub(r"^\)\s*", "", line).strip()
+        if not line:
+            continue
+        c_line = comparable(line)
+
+        if c_line.startswith("polevka") and not soup_added:
+            cleaned.append("Polévka")
+            soup_added = True
+            # Some pages still write "Polévka - Name" on one line; use it directly.
+            same_line_name = re.sub(r"^pol[eé]vka\s*\d?\s*[-:]\s*", "", line, flags=re.I).strip()
+            if same_line_name and comparable(same_line_name) != "polevka":
+                cleaned.append(same_line_name)
+                soup_name_added = True
             previous = line
             continue
 
-        # Meal rows sometimes start with just ')' due to the site's markup.
-        line = re.sub(r"^\)\s*", "", line).strip()
+        if soup_added and not soup_name_added:
+            # The soup name is its own DOM line, e.g. "- Gulášová z mletým masem a bramborem".
+            soup_name = re.sub(r"^[-\s]+", "", line).strip()
+            if soup_name:
+                cleaned.append(soup_name)
+                soup_name_added = True
+                previous = line
+                continue
 
-        if re.search(r"\b\d{2,4}\s*Kč\b", line, flags=re.I) and not main_added:
+        if not main_added and (soup_name_added or re.search(r"\b\d{2,4}\s*Kč\b", line, flags=re.I)):
             cleaned.append("Hlavní chody")
             main_added = True
 
