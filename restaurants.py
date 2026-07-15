@@ -1801,7 +1801,10 @@ def parse_teatr(restaurant: Restaurant, target_date: date, timeout_seconds: int)
 
 
 RESTAURANTS: list[Restaurant] = [
-    Restaurant("Zlatá Loď", "https://www.zlatalod.com/menu/", parse_daily_menu_page, key="zlata", aliases=("lod", "zlatalod")),
+    # Disabled 2026-07-15: zlatalod.com's TLS cert (CN=zlatalod.com) has no SAN for
+    # www.zlatalod.com, and the site force-redirects bare zlatalod.com -> www, so every
+    # client (including this script) fails hostname verification. Re-enable once fixed.
+    # Restaurant("Zlatá Loď", "https://www.zlatalod.com/menu/", parse_daily_menu_page, key="zlata", aliases=("lod", "zlatalod")),
     Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/", parse_buddha, key="buddha"),
     Restaurant("Na Solnici", "https://www.nasolnici.cz/", parse_generic_html, key="solnici"),
     Restaurant("Na Knoflíku", "http://www.brnorestaurace.cz/tydenni-menu/", parse_knofliku, allow_playwright_fallback=True, key="knofliku", aliases=("knoflik", "knoflíku", "brnorestaurace")),
