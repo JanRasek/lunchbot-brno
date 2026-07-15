@@ -4,12 +4,12 @@ on:
   schedule:
     # GitHub Actions cron is always UTC and never shifts for daylight saving, so a single
     # cron entry can't stay pinned to a fixed *local* time year-round. Instead, we register
-    # both UTC offsets that correspond to 10:20 Prague time, and the check-schedule job
-    # below figures out which one is currently correct and skips the other. Moved from
-    # 10:45 to 10:20 to leave buffer before lunch, since scheduled GitHub Actions triggers
-    # are best-effort and can fire a few minutes late.
-    - cron: "20 9 * * 1-5" # 10:20 CET (winter, UTC+1)
-    - cron: "20 8 * * 1-5" # 10:20 CEST (summer, UTC+2)
+    # both UTC offsets that correspond to 12:00 Prague time, and the check-schedule job
+    # below figures out which one is currently correct and skips the other. Temporarily
+    # moved to noon to test scheduled-trigger timing soon after this change lands; move
+    # back to a real lunch time once confirmed working.
+    - cron: "0 11 * * 1-5" # 12:00 CET (winter, UTC+1)
+    - cron: "0 10 * * 1-5" # 12:00 CEST (summer, UTC+2)
   workflow_dispatch: {}
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
     outputs:
       should_run: ${{ steps.dst-check.outputs.should_run }}
     steps:
-      - name: Determine whether this is the correct DST slot for 10:20 Prague time
+      - name: Determine whether this is the correct DST slot for 12:00 Prague time
         id: dst-check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -45,7 +45,7 @@ jobs:
           else:
               now_prague = datetime.now(ZoneInfo("Europe/Prague"))
               is_dst = now_prague.dst() != timedelta(0)
-              expected_cron = "20 8 * * 1-5" if is_dst else "20 9 * * 1-5"
+              expected_cron = "0 10 * * 1-5" if is_dst else "0 11 * * 1-5"
               should_run = event_schedule == expected_cron
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
