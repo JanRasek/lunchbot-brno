@@ -1825,7 +1825,11 @@ RESTAURANTS: list[Restaurant] = [
     # client (including this script) fails hostname verification. Re-enable once fixed.
     # Restaurant("Zlatá Loď", "https://www.zlatalod.com/menu/", parse_daily_menu_page, key="zlata", aliases=("lod", "zlatalod")),
     Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/", parse_buddha, key="buddha"),
-    Restaurant("Na Solnici", "https://www.nasolnici.cz/", parse_generic_html, key="solnici"),
+    # allow_playwright_fallback=True: nasolnici.cz intermittently connect-timeouts a plain
+    # requests.get() from GitHub Actions runners specifically (never reproduces from a
+    # residential network), while a real browser's Chromium network stack goes through
+    # fine — same signature as the other sites below that already use this fallback.
+    Restaurant("Na Solnici", "https://www.nasolnici.cz/", parse_generic_html, allow_playwright_fallback=True, key="solnici"),
     Restaurant("Na Knoflíku", "http://www.brnorestaurace.cz/tydenni-menu/", parse_knofliku, allow_playwright_fallback=True, key="knofliku", aliases=("knoflik", "knoflíku", "brnorestaurace")),
     Restaurant("La Famiglia", "https://lafamigliabrno.cz/denni-menu/", parse_lafamiglia, key="lafamiglia", aliases=("la famiglia", "famiglia")),
     Restaurant("Restaurant Teátr", "https://www.restaurant-teatr.cz/denni-menu.php", parse_teatr, key="teatr", aliases=("teátr", "teatr", "restaurant teatr")),
