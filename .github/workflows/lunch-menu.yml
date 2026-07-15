@@ -3,7 +3,7 @@ name: Post lunch menu to Slack
 on:
   schedule:
     # GitHub Actions cron is always UTC and never shifts for daylight saving, so a single
-    # cron entry can't stay pinned to a fixed *local* time year-round. Instead we register
+    # cron entry can't stay pinned to a fixed *local* time year-round. Instead, we register
     # both UTC offsets that correspond to 10:45 Prague time, and the check-schedule job
     # below figures out which one is currently correct and skips the other.
     - cron: "45 9 * * 1-5" # 10:45 CET (winter, UTC+1)

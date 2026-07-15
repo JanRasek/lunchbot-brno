@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+import socket
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -9,7 +10,18 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
+import urllib3.util.connection as urllib3_connection
 from bs4 import BeautifulSoup
+
+# Some restaurant sites (e.g. nasolnici.cz) publish both an A and an AAAA record, and
+# their IPv6 route is not reliably reachable from every network (GitHub Actions runner,
+# home network, etc.). socket.create_connection() tries each resolved address in turn and
+# gives each one the *full* connect timeout before moving on, so an IPv6 address that
+# black-holes (rather than actively refusing the connection) silently doubles the
+# request's latency and can push it past the configured timeout even though IPv4 alone
+# would have succeeded almost instantly. None of these sites need IPv6, so force
+# requests/urllib3 to resolve IPv4 addresses only, process-wide.
+urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
 
 PLAYWRIGHT_MISSING_HINT = (
     "Playwright is not installed. Run: pip install playwright && python -m playwright install chromium"
