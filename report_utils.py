@@ -365,10 +365,10 @@ def build_html_report(results, target_date: date) -> str:
             background: #fff;
         }}
         .category-row {{
-            padding: 8px 12px 6px 12px;
-            background: #f8fafc;
-            border-top: 1px solid #e5e7eb;
-            border-bottom: 1px solid #e5e7eb;
+            padding: 12px 12px 9px 12px;
+            background: #eef2f7;
+            border-top: 2px solid #cbd5e1;
+            border-bottom: 2px solid #cbd5e1;
         }}
         .category-row:first-child {{ border-top: 0; }}
         .category-row span {{

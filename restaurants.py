@@ -1618,13 +1618,22 @@ def _ucertu_clean_section(section: list[str]) -> list[str]:
             continue
 
         if soup_added and not soup_name_added:
-            # The soup name is its own DOM line, e.g. "- Gulášová z mletým masem a bramborem".
-            soup_name = re.sub(r"^[-\s]+", "", line).strip()
-            if soup_name:
-                cleaned.append(soup_name)
-                soup_name_added = True
-                previous = line
+            # The soup name is usually its own DOM line, e.g. "- Gulášová z mletým
+            # masem a bramborem", but the page sometimes duplicates the category
+            # label onto that same line too ("Polévka: Gulášová ..." right after the
+            # already-added "Polévka" heading). Strip a redundant "Polévka[:-]"
+            # prefix the same way the same-line case above does, then fall back to
+            # stripping a leading bullet dash.
+            soup_name = re.sub(r"^pol[eé]vka\s*\d?\s*[-:]\s*", "", line, flags=re.I).strip()
+            soup_name = re.sub(r"^[-\s]+", "", soup_name).strip()
+            previous = line
+            if not soup_name or comparable(soup_name) == "polevka":
+                # A bare/duplicate "Polévka" line with nothing new -- discard and
+                # keep waiting for the actual soup name.
                 continue
+            cleaned.append(soup_name)
+            soup_name_added = True
+            continue
 
         if not main_added and (soup_name_added or re.search(r"\b\d{2,4}\s*Kč\b", line, flags=re.I)):
             cleaned.append("Hlavní chody")
