@@ -152,23 +152,24 @@ C:\path\to\lunchbot\main.py --save-pdf --save-screenshots
 
 ### GitHub Actions
 
-`.github/workflows/lunch-menu.yml` runs the bot on a schedule (weekdays only, via cron's
-day-of-week field) once this repo is pushed to GitHub. To enable it:
+`.github/workflows/lunch-menu.yml` posts the lunch menu once this repo is pushed to
+GitHub and triggered. To enable it:
 
 1. Push this repo to GitHub.
 2. Go to the repo's **Settings → Secrets and variables → Actions** and add a repository
    secret named `SLACK_WEBHOOK_URL` with your webhook URL (a Slack Workflow Builder "From
    a webhook" trigger works without needing permission to create a custom Slack app —
    see the note in `.env.example`).
-3. That's it. The workflow also has a manual trigger (**Actions → Post lunch menu to
-   Slack → Run workflow**) so you can test it without waiting for the schedule.
+3. Set up an external scheduler to trigger it daily (see below) — the workflow itself has
+   no `on.schedule` trigger, only `workflow_dispatch`, so nothing fires on its own.
 
-The workflow's `on.schedule` trigger (two cron entries, `30 9 * * 1-5` and `30 8 * * 1-5`,
-so it stays pinned to 10:30 Prague time year-round via the `check-schedule` job's DST
-check) is a **fallback only**. GitHub's own schedule queue proved unreliable on this repo
-— test runs fired 87 and 127 minutes after their target time — so the primary trigger is
-an external cron-job.org job that calls the GitHub REST API to fire `workflow_dispatch`
-directly at 10:30 Europe/Prague time:
+The workflow only listens for `workflow_dispatch` — there is deliberately no
+`on.schedule` trigger. GitHub's own schedule queue proved unreliable on this repo (test
+runs fired 87 and 127 minutes after their target time), and having both an unreliable
+`on.schedule` and a reliable external trigger active at once risks posting the menu
+twice on any day the delayed schedule run happens to land after the on-time one. Instead,
+an external cron-job.org job calls the GitHub REST API to fire `workflow_dispatch`
+directly at 10:30 Europe/Prague time every weekday:
 
 ```
 POST https://api.github.com/repos/<owner>/<repo>/actions/workflows/lunch-menu.yml/dispatches
@@ -178,8 +179,10 @@ Body: {"ref": "master"}
 ```
 
 `workflow_dispatch` isn't subject to the same delayed queue as `on.schedule`, so it starts
-within seconds. If you change the target time, keep the cron-job.org schedule, both
-`on.schedule` cron entries, and the `expected_cron` values in `check-schedule` in sync.
+within seconds. cron-job.org supports per-job timezones, so the schedule there can be set
+directly to "10:30, Europe/Prague" without needing to juggle separate UTC offsets for
+CET/CEST. You can also trigger a run manually any time via **Actions → Post lunch menu to
+Slack → Run workflow**.
 
 ### Posted message + hosted report
 

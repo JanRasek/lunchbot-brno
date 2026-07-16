@@ -1,19 +1,12 @@
 name: Post lunch menu to Slack
 
 on:
-  schedule:
-    # GitHub Actions cron is always UTC and never shifts for daylight saving, so a single
-    # cron entry can't stay pinned to a fixed *local* time year-round. Instead, we register
-    # both UTC offsets that correspond to 10:30 Prague time, and the check-schedule job
-    # below figures out which one is currently correct and skips the other.
-    #
-    # This on.schedule trigger is now just a fallback. GitHub's own schedule queue proved
-    # unreliable on this repo (observed 87 and 127 minute delays on real test runs), so the
-    # primary trigger is an external cron-job.org job that calls the GitHub REST API to
-    # fire workflow_dispatch directly at 10:30 Europe/Prague time -- workflow_dispatch isn't
-    # subject to the same delayed queue. Keep both times in sync if you change one.
-    - cron: "30 9 * * 1-5" # 10:30 CET (winter, UTC+1)
-    - cron: "30 8 * * 1-5" # 10:30 CEST (summer, UTC+2)
+  # No on.schedule trigger: GitHub's own schedule queue proved unreliable on this repo
+  # (observed 87 and 127 minute delays on real test runs). The reliable trigger is an
+  # external cron-job.org job that calls the GitHub REST API to fire workflow_dispatch
+  # directly at 10:30 Europe/Prague time every weekday -- workflow_dispatch starts within
+  # seconds, unlike on.schedule. Keeping only workflow_dispatch here also avoids the risk
+  # of double-posting that having both triggers active would create.
   workflow_dispatch: {}
 
 permissions:
@@ -22,45 +15,7 @@ permissions:
   id-token: write
 
 jobs:
-  check-schedule:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      should_run: ${{ steps.dst-check.outputs.should_run }}
-    steps:
-      - name: Determine whether this is the correct DST slot for 10:30 Prague time
-        id: dst-check
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_SCHEDULE: ${{ github.event.schedule }}
-        run: |
-          python3 - <<'PYEOF'
-          import os
-          from datetime import datetime, timedelta
-          from zoneinfo import ZoneInfo
-
-          event_name = os.environ["EVENT_NAME"]
-          event_schedule = os.environ.get("EVENT_SCHEDULE", "")
-
-          if event_name != "schedule":
-              # Manual runs (workflow_dispatch) always proceed; only scheduled
-              # runs need to pick the one matching offset and skip the other.
-              should_run = True
-          else:
-              now_prague = datetime.now(ZoneInfo("Europe/Prague"))
-              is_dst = now_prague.dst() != timedelta(0)
-              expected_cron = "30 8 * * 1-5" if is_dst else "30 9 * * 1-5"
-              should_run = event_schedule == expected_cron
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"should_run={'true' if should_run else 'false'}\n")
-
-          print(f"event_name={event_name} event_schedule={event_schedule!r} should_run={should_run}")
-          PYEOF
-
   post-menu:
-    needs: check-schedule
-    if: needs.check-schedule.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
