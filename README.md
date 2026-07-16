@@ -163,17 +163,23 @@ day-of-week field) once this repo is pushed to GitHub. To enable it:
 3. That's it. The workflow also has a manual trigger (**Actions → Post lunch menu to
    Slack → Run workflow**) so you can test it without waiting for the schedule.
 
-The workflow registers two cron entries (`0 8 * * 1-5` and `0 7 * * 1-5`) so it stays
-pinned to 09:00 Prague time year-round; the `check-schedule` job figures out which one is
-currently correct for DST and skips the other (GitHub Actions cron is always UTC and
-never shifts for daylight saving on its own). Adjust both cron entries and the
-`expected_cron` values in `check-schedule` together if you want a different local time.
+The workflow's `on.schedule` trigger (two cron entries, `30 9 * * 1-5` and `30 8 * * 1-5`,
+so it stays pinned to 10:30 Prague time year-round via the `check-schedule` job's DST
+check) is a **fallback only**. GitHub's own schedule queue proved unreliable on this repo
+— test runs fired 87 and 127 minutes after their target time — so the primary trigger is
+an external cron-job.org job that calls the GitHub REST API to fire `workflow_dispatch`
+directly at 10:30 Europe/Prague time:
 
-Note that GitHub's `on.schedule` trigger is best-effort and can run significantly late —
-a test run fired 87 minutes after its target time. 09:00 was chosen to leave a large
-buffer before lunch even if that happens again; use the manual trigger (or an external
-scheduler calling the GitHub API's `workflow_dispatch` endpoint) if you need the post to
-land at a precise time.
+```
+POST https://api.github.com/repos/<owner>/<repo>/actions/workflows/lunch-menu.yml/dispatches
+Authorization: Bearer <fine-grained PAT, Actions: Read and write on this repo only>
+Accept: application/vnd.github+json
+Body: {"ref": "master"}
+```
+
+`workflow_dispatch` isn't subject to the same delayed queue as `on.schedule`, so it starts
+within seconds. If you change the target time, keep the cron-job.org schedule, both
+`on.schedule` cron entries, and the `expected_cron` values in `check-schedule` in sync.
 
 ### Posted message + hosted report
 
