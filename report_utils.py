@@ -40,8 +40,15 @@ def _render_menu_rows(lines: Sequence[str]) -> str:
     parts: list[str] = ['<div class="menu-table">']
     item_index = 1
     previous_kind = ""
+    seen_category = False
     for row in rows:
         if row.kind == "category":
+            if seen_category:
+                # A plain rule between groups (e.g. soup -> mains), separate from the
+                # category label itself, so the label keeps reading as a small title
+                # rather than every group looking like an equally heavy boxed band.
+                parts.append('<hr class="category-divider">')
+            seen_category = True
             parts.append(
                 '<div class="category-row">'
                 f'<span>{escape(row.text)}</span>'
@@ -365,12 +372,14 @@ def build_html_report(results, target_date: date) -> str:
             background: #fff;
         }}
         .category-row {{
-            padding: 12px 12px 9px 12px;
-            background: #eef2f7;
-            border-top: 2px solid #cbd5e1;
-            border-bottom: 2px solid #cbd5e1;
+            padding: 10px 12px 6px 12px;
         }}
-        .category-row:first-child {{ border-top: 0; }}
+        .category-row:first-child {{ padding-top: 0; }}
+        .category-divider {{
+            border: none;
+            border-top: 2px solid #cbd5e1;
+            margin: 6px 12px 0 12px;
+        }}
         .category-row span {{
             display: inline-block;
             padding: 4px 8px;

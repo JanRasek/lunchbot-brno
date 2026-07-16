@@ -439,8 +439,18 @@ def structured_menu_rows(lines: Sequence[str], max_items: int | None = None) -> 
         inline_category = _split_inline_category(line)
         if inline_category:
             category_label, remainder = inline_category
-            flush_unpriced()
-            rows.append(StructuredMenuRow(kind="category", text=category_label))
+            # A duplicated DOM node can repeat the same category label on a later
+            # line (e.g. a bare "Polévka" row followed by "Polévka: <soup name>"),
+            # which would otherwise show up as two consecutive category badges for
+            # the same group. Don't re-add the category row if the previous row
+            # already is that same category -- just treat this line's remainder as
+            # the group's content instead.
+            is_duplicate_category = (
+                rows and rows[-1].kind == "category" and comparable(rows[-1].text) == comparable(category_label)
+            )
+            if not is_duplicate_category:
+                flush_unpriced()
+                rows.append(StructuredMenuRow(kind="category", text=category_label))
             line = remainder
 
         price_match = PRICE_RE.search(line)
