@@ -1833,7 +1833,11 @@ RESTAURANTS: list[Restaurant] = [
     # www.zlatalod.com, and the site force-redirects bare zlatalod.com -> www, so every
     # client (including this script) fails hostname verification. Re-enable once fixed.
     # Restaurant("Zlatá Loď", "https://www.zlatalod.com/menu/", parse_daily_menu_page, key="zlata", aliases=("lod", "zlatalod")),
-    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/", parse_buddha, key="buddha"),
+    # allow_playwright_fallback=True since 2026-09-16: indian-restaurant-buddha.cz added
+    # WEDOS.protection (an ALTCHA proof-of-work bot check) that 401s plain requests calls
+    # based on TLS fingerprint alone, even with a browser-like User-Agent. A real headless
+    # browser passes the automatic JS challenge, so Playwright works.
+    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/", parse_buddha, allow_playwright_fallback=True, key="buddha"),
     # Disabled 2026-07-15: nasolnici.cz intermittently connect-timeouts a plain
     # requests.get() from GitHub Actions runners specifically (never reproduces from a
     # residential network). Adding allow_playwright_fallback=True did not reliably fix it
@@ -1841,11 +1845,15 @@ RESTAURANTS: list[Restaurant] = [
     # re-enabling.
     # Restaurant("Na Solnici", "https://www.nasolnici.cz/", parse_generic_html, allow_playwright_fallback=True, key="solnici"),
     Restaurant("Na Knoflíku", "http://www.brnorestaurace.cz/tydenni-menu/", parse_knofliku, allow_playwright_fallback=True, key="knofliku", aliases=("knoflik", "knoflíku", "brnorestaurace")),
-    Restaurant("La Famiglia", "https://lafamigliabrno.cz/denni-menu/", parse_lafamiglia, key="lafamiglia", aliases=("la famiglia", "famiglia")),
+    # allow_playwright_fallback=True since 2026-09-16: lafamigliabrno.cz added the same
+    # WEDOS.protection ALTCHA check as Buddha above; see that comment for details.
+    Restaurant("La Famiglia", "https://lafamigliabrno.cz/denni-menu/", parse_lafamiglia, allow_playwright_fallback=True, key="lafamiglia", aliases=("la famiglia", "famiglia")),
     Restaurant("Restaurant Teátr", "https://www.restaurant-teatr.cz/denni-menu.php", parse_teatr, key="teatr", aliases=("teátr", "teatr", "restaurant teatr")),
     Restaurant("Parodie", "", parse_parodie_static_image, key="parodie", aliases=("parody",)),
     Restaurant("Diandi", "", parse_diandi_static_image, key="diandi"),
-    Restaurant("U Třech Čertů Dvořákova", "https://ucertu.cz/dvorakova/", parse_ucertu_dvorakova, key="certu", aliases=("čertů", "dvorakova", "dvořákova")),
+    # allow_playwright_fallback=True since 2026-09-16: ucertu.cz added the same
+    # WEDOS.protection ALTCHA check as Buddha above; see that comment for details.
+    Restaurant("U Třech Čertů Dvořákova", "https://ucertu.cz/dvorakova/", parse_ucertu_dvorakova, allow_playwright_fallback=True, key="certu", aliases=("čertů", "dvorakova", "dvořákova")),
     Restaurant("Charlie's Square", "https://www.charliessquare.cz/", parse_daily_menu_page, key="charlies", aliases=("charlie",)),
     Restaurant("Singha Thai", "https://www.singhathairestaurant.cz/poledni-menu/", parse_singha, allow_playwright_fallback=True, key="singha", aliases=("single", "singha thai")),
     # Important: use the weekly-menu subpages, not the homepages. The Zomato iframe lives here.
