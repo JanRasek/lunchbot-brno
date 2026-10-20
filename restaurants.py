@@ -1591,9 +1591,10 @@ RESTAURANTS: list[Restaurant] = [
     # WEDOS.protection (an ALTCHA proof-of-work bot check) that 401s plain requests calls
     # based on TLS fingerprint alone, even with a browser-like User-Agent. A real headless
     # browser passes the automatic JS challenge, so Playwright works.
-    # URL is /home.html since 2026-10-20: the root became a branch picker (Buddha,
-    # Siddhartha, Buddha 2) with no menu on it.
-    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/home.html", parse_buddha, allow_playwright_fallback=True, key="buddha"),
+    # URL is /home.html#weeklyMenu since 2026-10-20: the root became a branch picker
+    # (Buddha, Siddhartha, Buddha 2) with no menu on it. The fragment only makes the
+    # Slack source link jump to the menu; fetching ignores it.
+    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/home.html#weeklyMenu", parse_buddha, allow_playwright_fallback=True, key="buddha"),
     # Disabled 2026-07-15: nasolnici.cz intermittently connect-timeouts a plain
     # requests.get() from GitHub Actions runners specifically (never reproduces from a
     # residential network). Adding allow_playwright_fallback=True did not reliably fix it
