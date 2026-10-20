@@ -1582,6 +1582,59 @@ def parse_teatr(restaurant: Restaurant, target_date: date, timeout_seconds: int)
     return restaurant.success(cleaned, source_url=source_url, note=note)
 
 
+def _parse_oaza_rows_from_html(html_text: str, target_date: date) -> list[str]:
+    """Extract today's rows from Oáza's weekly "Jídelní lístek" page.
+
+    Each dish is a ``div.menu-list-item`` with the name in ``h3``, the price in
+    ``span.price`` ("96.00 Kč") and a reservation button whose ``data-datum``
+    holds the ISO date, so we match on that instead of the weekday headings.
+    Rows priced 0.00 Kč are info lines (coffee list, phone number), not dishes.
+    Rows under 35 Kč are drinks (29 Kč) and spreads/side salads (20–30 Kč); the
+    cheapest real dishes are the 39 Kč soups, so they stay.
+    """
+    soup = make_soup(html_text)
+    target_iso = target_date.isoformat()
+    rows: list[str] = []
+
+    for item in soup.select("div.menu-list-item"):
+        button = item.select_one("[data-datum]")
+        if not button or button.get("data-datum", "").strip() != target_iso:
+            continue
+
+        name_tag = item.find("h3")
+        price_tag = item.select_one("span.price")
+        if not name_tag or not price_tag:
+            continue
+
+        meal = normalize_whitespace(name_tag.get_text(" ", strip=True))
+        price_match = re.search(r"(\d+)(?:[.,]\d+)?\s*Kč", price_tag.get_text(" ", strip=True))
+        if not meal or not price_match or int(price_match.group(1)) < 35:
+            continue
+
+        rows.append(f"{meal} — {price_match.group(1)} Kč")
+
+    return rows
+
+
+def parse_oaza(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
+    """Parse Oáza vegetarian canteen weekly menu page."""
+    fetched = fetch_html(
+        restaurant.url,
+        timeout_seconds=timeout_seconds,
+        allow_playwright_fallback=restaurant.allow_playwright_fallback,
+    )
+
+    rows = _parse_oaza_rows_from_html(fetched.text, target_date)
+    if not rows:
+        return restaurant.failure(
+            "Could not find today's Oáza menu rows.",
+            note="This parser expects div.menu-list-item rows with a data-datum date on the reservation button.",
+            screenshot_url=fetched.url,
+        )
+
+    return restaurant.success(rows, source_url=fetched.url, note="Matched rows by data-datum date.")
+
+
 RESTAURANTS: list[Restaurant] = [
     # Disabled 2026-07-15: zlatalod.com's TLS cert (CN=zlatalod.com) has no SAN for
     # www.zlatalod.com, and the site force-redirects bare zlatalod.com -> www, so every
@@ -1616,4 +1669,5 @@ RESTAURANTS: list[Restaurant] = [
     Restaurant("U Dřevěného orla", "https://www.drevenyorel.cz/cz/page/tydenni-menu.html", parse_zomato_iframe_or_external, allow_playwright_fallback=True, key="orel", aliases=("orla", "drevenyorel", "dřevěný orel")),
     Restaurant("Suzie's", "https://suzies.cz/poledni-menu/", parse_generic_html, key="suzies", aliases=("suzie",)),
     Restaurant("U Dřevěného vlka", "https://www.drevenyvlk.cz/cz/page/tydenni-menu.html", parse_zomato_iframe_or_external, allow_playwright_fallback=True, key="vlk", aliases=("vlka", "drevenyvlk", "dřevěný vlk")),
+    Restaurant("Oáza", "https://www.oaza-brno.cz/jidelni-listek/", parse_oaza, key="oaza", aliases=("oáza",)),
 ]
