@@ -1315,7 +1315,18 @@ def _lafamiglia_clean_section(section: list[str]) -> list[str]:
 
     # The first line after the weekday is the soup. Add a clear category so the
     # report stays readable even though the soup usually has no separate price.
-    if cleaned and "polevka" not in comparable(cleaned[0]) and "soup" not in comparable(cleaned[0]):
+    # Skip it when the site already has its own soup heading before the mains,
+    # e.g. after a "Menu s polévkou v ceně" note, or the heading shows up twice.
+    soup_headings = {"polevka", "polevky", "soup"}
+    has_soup_heading = False
+    for line in cleaned:
+        c_line = comparable(line).rstrip(":")
+        if c_line in soup_headings:
+            has_soup_heading = True
+            break
+        if c_line == "hlavni chody":
+            break
+    if cleaned and not has_soup_heading and "polevka" not in comparable(cleaned[0]) and "soup" not in comparable(cleaned[0]):
         cleaned.insert(0, "Polévka")
     return cleaned
 
