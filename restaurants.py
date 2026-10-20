@@ -1187,6 +1187,9 @@ def _parse_knofliku_rows_from_html(html_text: str, target_date: date) -> list[st
                 continue
 
             if label[:1].isdigit():
+                # Without this heading the mains render under the soup's "Polévka" category.
+                if next_number == 1 and rows:
+                    rows.append("Hlavní chody")
                 next_number += 1
 
             line = f"{label} {description} — {price}".strip()
@@ -1492,8 +1495,8 @@ def parse_parodie_static_image(restaurant: Restaurant, target_date: date, timeou
     return _static_image_result(restaurant, "parodie.png")
 
 
-def parse_diandi_static_image(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
-    return _static_image_result(restaurant, "diandi.png")
+def parse_vietnam_static_image(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
+    return _static_image_result(restaurant, "vietnam.png")
 
 def _teatr_clean_section(section: list[str]) -> list[str]:
     """Normalize Restaurant Teátr daily menu section.
@@ -1582,6 +1585,19 @@ def parse_teatr(restaurant: Restaurant, target_date: date, timeout_seconds: int)
     return restaurant.success(cleaned, source_url=source_url, note=note)
 
 
+# Drinks offers like "0,3l Čepovaný nealkoholický Rádler / 0,5l Zlatý Bažant 12` 45 Kč".
+# Matched by drink words, not by volume, because soups also start with one ("0,22l Uzená").
+SUZIES_DRINK_RE = re.compile(r"r[aá]dler|pivo|ba[zž]ant|[cč]epovan|to[cč]en|limon[aá]d", re.I)
+
+
+def parse_suzies(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
+    """Parse Suzie's lunch page, dropping the drinks offer listed after the meals."""
+    result = parse_generic_html(restaurant, target_date, timeout_seconds)
+    if result.status == "ok":
+        result.lines = [line for line in result.lines if not SUZIES_DRINK_RE.search(line)]
+    return result
+
+
 def _parse_oaza_rows_from_html(html_text: str, target_date: date) -> list[str]:
     """Extract today's rows from Oáza's weekly "Jídelní lístek" page.
 
@@ -1660,14 +1676,14 @@ RESTAURANTS: list[Restaurant] = [
     Restaurant("La Famiglia", "https://lafamigliabrno.cz/denni-menu/", parse_lafamiglia, allow_playwright_fallback=True, key="lafamiglia", aliases=("la famiglia", "famiglia")),
     Restaurant("Restaurant Teátr", "https://www.restaurant-teatr.cz/denni-menu.php", parse_teatr, key="teatr", aliases=("teátr", "teatr", "restaurant teatr")),
     Restaurant("Parodie", "", parse_parodie_static_image, key="parodie", aliases=("parody",)),
-    Restaurant("Diandi", "", parse_diandi_static_image, key="diandi"),
+    Restaurant("Vietnam", "", parse_vietnam_static_image, key="vietnam", aliases=("diandi", "vietnamese")),
     # allow_playwright_fallback=True since 2026-09-16: ucertu.cz added the same
     # WEDOS.protection ALTCHA check as Buddha above; see that comment for details.
     Restaurant("U Třech Čertů Dvořákova", "https://ucertu.cz/dvorakova/", parse_ucertu_dvorakova, allow_playwright_fallback=True, key="certu", aliases=("čertů", "dvorakova", "dvořákova")),
     Restaurant("Charlie's Square", "https://www.charliessquare.cz/", parse_daily_menu_page, key="charlies", aliases=("charlie",)),
     # Important: use the weekly-menu subpages, not the homepages. The Zomato iframe lives here.
     Restaurant("U Dřevěného orla", "https://www.drevenyorel.cz/cz/page/tydenni-menu.html", parse_zomato_iframe_or_external, allow_playwright_fallback=True, key="orel", aliases=("orla", "drevenyorel", "dřevěný orel")),
-    Restaurant("Suzie's", "https://suzies.cz/poledni-menu/", parse_generic_html, key="suzies", aliases=("suzie",)),
+    Restaurant("Suzie's", "https://suzies.cz/poledni-menu/", parse_suzies, key="suzies", aliases=("suzie",)),
     Restaurant("U Dřevěného vlka", "https://www.drevenyvlk.cz/cz/page/tydenni-menu.html", parse_zomato_iframe_or_external, allow_playwright_fallback=True, key="vlk", aliases=("vlka", "drevenyvlk", "dřevěný vlk")),
     Restaurant("Oáza", "https://www.oaza-brno.cz/jidelni-listek/", parse_oaza, key="oaza", aliases=("oáza",)),
 ]
