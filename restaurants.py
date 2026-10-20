@@ -135,286 +135,6 @@ def parse_daily_menu_page(restaurant: Restaurant, target_date: date, timeout_sec
     return restaurant.success(section, source_url=source_url, note=note)
 
 
-def _singha_fix_mojibake(value: str) -> str:
-    """Repair common UTF-8-as-Latin-1 mojibake if the site response is decoded badly."""
-    if "Ã" not in value and "Ä" not in value and "Å" not in value:
-        return value
-    try:
-        return value.encode("latin1", errors="ignore").decode("utf-8", errors="ignore") or value
-    except Exception:
-        return value
-
-
-def _singha_comparable(value: str) -> str:
-    return comparable(_singha_fix_mojibake(value))
-
-
-def _singha_price(value: str) -> str:
-    """Normalize prices such as '209,- Kč', '199 Kč' or '194Kč' to '209 Kč'."""
-    match = re.search(r"\b(?P<number>\d{2,4})\s*(?:,-\s*)?(?:Kč|Kc|CZK)\b|\b(?P<number2>\d{2,4})\s*,-", value, flags=re.I)
-    if not match:
-        return ""
-    return f"{match.group('number') or match.group('number2')} Kč"
-
-
-def _singha_remove_price(value: str) -> str:
-    value = re.sub(r"\b\d{2,4}\s*(?:,-\s*)?(?:Kč|Kc|CZK)\b", "", value, flags=re.I)
-    value = re.sub(r"\b\d{2,4}\s*,-", "", value, flags=re.I)
-    return normalize_whitespace(value).strip(" -–—:")
-
-
-def _singha_is_price_only(value: str) -> bool:
-    return bool(re.fullmatch(r"\s*\d{2,4}\s*(?:,-\s*)?(?:Kč|Kc|CZK)?\s*", value, flags=re.I))
-
-
-def _singha_is_english_description(value: str) -> bool:
-    """Skip the duplicated English description; keep the Czech line for compact output."""
-    if re.search(r"[ěščřžýáíéúůďťňĚŠČŘŽÝÁÍÉÚŮĎŤŇ]", value):
-        return False
-    return bool(re.search(
-        r"\b(japanese|wide|yellow|soup|spicy|thai|with|chicken|beef|shrimp|shrimps|noodles|served|curry|mushroom|coconut|milk|vegetables|fresh|rice|stir|fried|paste|meat|served)\b",
-        value,
-        flags=re.I,
-    ))
-
-
-def _singha_is_probable_title(value: str, current_category: str) -> bool:
-    """Detect Singha item titles even when the price is in a separate Elementor widget.
-
-    In the page DOM, a title can be in one widget and the price in a neighboring
-    widget/column. Inner text therefore often appears as:
-
-    ``1) UDON SUZUKI - KUŘECÍ/CHICKEN``
-    ``Japonské udon nudle ...``
-    ``Japanese udon noodles ...``
-    ``194 Kč``
-
-    The old parser only accepted title+price on the same line, so it could return
-    no rows even though the menu was visible.
-    """
-    value = normalize_whitespace(_singha_fix_mojibake(value))
-    if not value or _singha_is_price_only(value) or _singha_category(value):
-        return False
-    c_value = _singha_comparable(value)
-    if any(stop in c_value for stop in ["uvod", "poledni menu", "jidelnicek", "napojovy listek", "kontakt", "nas instagram"]):
-        return False
-    # Main-course titles are numbered. Check this before the English-description
-    # heuristic because titles may contain words like CHICKEN/BEEF/SHRIMPS.
-    if re.match(r"^\d+\s*[).]", value):
-        return True
-    if current_category == "Polévky":
-        return bool(re.search(r"\b(tom\s+kha|tom\s+yam|pol[eé]vka|soup)\b", value, flags=re.I))
-    if _singha_is_english_description(value):
-        return False
-    return False
-
-
-def _singha_visible_text_lines(url: str, timeout_seconds: int) -> list[str]:
-    """Return Playwright visible text lines for Elementor layouts.
-
-    BeautifulSoup over page.content() can miss the practical reading order when
-    Elementor splits a menu into multiple widgets/columns. Browser-visible text is
-    closer to what a human sees on the page.
-    """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError(
-            "Playwright is not installed. Run: pip install playwright && python -m playwright install chromium"
-        ) from exc
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            page = browser.new_page(locale="cs-CZ", viewport={"width": 1365, "height": 1600})
-            page.goto(url, wait_until="domcontentloaded", timeout=timeout_seconds * 1000)
-            page.wait_for_timeout(1500)
-            try:
-                page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                page.wait_for_timeout(700)
-                page.evaluate("() => window.scrollTo(0, 0)")
-                page.wait_for_timeout(300)
-            except Exception:
-                pass
-            text = page.locator("body").inner_text(timeout=timeout_seconds * 1000)
-            return clean_lines(text.splitlines())
-        finally:
-            browser.close()
-
-
-def _singha_category(value: str) -> str:
-    c_value = _singha_comparable(value)
-    if c_value in {"hlavni chody", "main courses"}:
-        return "Hlavní chody"
-    if c_value in {"polevky", "soups", "soup"}:
-        return "Polévky"
-    return ""
-
-
-def _parse_singha_lines(lines: list[str]) -> list[str]:
-    """Parse Singha's Elementor lunch-menu page into compact meal rows.
-
-    Handles both forms seen on the page:
-    - title and price on the same line: ``1) UDON ... 194 Kč``
-    - title/description/price split across separate Elementor widgets.
-    """
-    fixed_lines = [normalize_whitespace(_singha_fix_mojibake(line)) for line in lines]
-    fixed_lines = [line for line in fixed_lines if line]
-
-    start_index = None
-    for index, line in enumerate(fixed_lines):
-        if _singha_category(line) == "Hlavní chody":
-            start_index = index
-            break
-    if start_index is None:
-        for index, line in enumerate(fixed_lines):
-            if _singha_price(line) and not _singha_is_price_only(line):
-                start_index = index
-                break
-    if start_index is None:
-        return []
-
-    rows: list[str] = []
-    current_category = ""
-    index = start_index
-    seen_items: set[str] = set()
-
-    def is_stop(value: str) -> bool:
-        c_value = _singha_comparable(value)
-        return any(stop in c_value for stop in [
-            "nas instagram",
-            "kontakt",
-            "zadne produkty",
-            "jidelnicek",
-            "napojovy listek",
-            "facebook",
-            "instagram",
-        ])
-
-    while index < len(fixed_lines):
-        line = fixed_lines[index]
-
-        if is_stop(line):
-            break
-
-        category = _singha_category(line)
-        if category:
-            if category != current_category:
-                rows.append(category)
-                current_category = category
-            index += 1
-            continue
-
-        price_on_title = _singha_price(line)
-        is_title_with_price = bool(price_on_title and not _singha_is_price_only(line))
-        is_split_title = _singha_is_probable_title(line, current_category)
-
-        if is_title_with_price or is_split_title:
-            price = price_on_title
-            meal = _singha_remove_price(line) if price_on_title else line
-            description = ""
-            lookahead = index + 1
-
-            # Elementor often renders the visible reading order as:
-            # title -> price -> Czech description -> English description,
-            # or title -> Czech description -> English description -> price.
-            # The previous parser stopped as soon as it consumed a standalone price,
-            # which meant Singha rows only contained the meal name. Keep scanning
-            # briefly until the next title/category so we can attach the Czech
-            # description even when the price appears before it.
-            max_lookahead = min(len(fixed_lines), index + 10)
-            while lookahead < max_lookahead:
-                candidate = fixed_lines[lookahead]
-
-                if is_stop(candidate) or _singha_category(candidate):
-                    break
-
-                # The next probable title starts the next item.
-                if _singha_is_probable_title(candidate, current_category):
-                    break
-
-                candidate_price = _singha_price(candidate)
-                if candidate_price:
-                    if not price:
-                        price = candidate_price
-                    lookahead += 1
-                    continue
-
-                if _singha_is_english_description(candidate):
-                    lookahead += 1
-                    continue
-
-                if candidate and not _singha_is_price_only(candidate):
-                    if not description:
-                        description = candidate
-                    elif len(description) < 180 and candidate not in description:
-                        description = f"{description} {candidate}"
-
-                lookahead += 1
-
-            if meal and price:
-                compact = meal
-                if description:
-                    compact = f"{compact} - {description}"
-                compact = f"{compact} {price}"
-                if compact not in seen_items:
-                    seen_items.add(compact)
-                    rows.append(compact)
-                index = max(index + 1, lookahead)
-                continue
-
-        index += 1
-
-    # Require at least two price rows so we do not accept navigation/header text.
-    if sum(1 for row in rows if _singha_price(row)) < 2:
-        return []
-    return clean_lines(rows)
-
-def parse_singha(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
-    fetch_errors: list[str] = []
-    attempts: list[tuple[str, str, list[str]]] = []
-
-    try:
-        source_url, lines = html_lines(restaurant, timeout_seconds)
-        attempts.append((source_url, "normal HTML", lines))
-    except Exception as exc:
-        fetch_errors.append(f"normal HTML failed: {exc}")
-
-    # Singha uses an Elementor page where the visible menu can be more reliable after
-    # browser rendering. Try both rendered HTML and browser-visible text before failing.
-    try:
-        rendered = fetch_html_playwright_all_frames(restaurant.url, timeout_seconds)
-        soup = make_soup(rendered.text)
-        attempts.append((rendered.url, "rendered browser HTML", soup_to_lines(soup)))
-    except Exception as exc:
-        fetch_errors.append(f"rendered browser HTML failed: {exc}")
-
-    try:
-        visible_lines = _singha_visible_text_lines(restaurant.url, timeout_seconds)
-        attempts.append((restaurant.url, "browser-visible text", visible_lines))
-    except Exception as exc:
-        fetch_errors.append(f"browser-visible text failed: {exc}")
-
-    for source_url, source_name, lines in attempts:
-        section = _parse_singha_lines(lines)
-        if section:
-            return restaurant.success(
-                section,
-                source_url=source_url,
-                note=f"Extracted Singha lunch-menu rows from the {source_name}; this page does not expose weekday headings.",
-            )
-
-    extra = " ".join(fetch_errors).strip()
-    return restaurant.failure(
-        "Could not extract Singha lunch menu rows.",
-        note=(
-            "This parser expects the visible Singha page sections 'Hlavní chody' and 'Polévky' "
-            "with item titles and Kč prices. " + extra
-        ).strip(),
-        screenshot_url=restaurant.url,
-    )
-
-
 def parse_linked_pdf_weekly(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
     fetched = fetch_html(
         restaurant.url,
@@ -1232,6 +952,38 @@ def parse_external_only(restaurant: Restaurant, target_date: date, timeout_secon
     return restaurant.failure("The official page does not contain parseable menu text.", screenshot_url=fetched.url)
 
 
+def _buddha_clean_section(section: list[str]) -> list[str]:
+    """Clean Buddha's per-day menu block (home.html since 2026-10).
+
+    Each dish is rendered as separate DOM lines: "1.", name, allergens ("7 + 8"),
+    description, bare price ("160"), then "Kč". The bare price looks like an allergen
+    code to the generic grouper and the lone "Kč" lines glue every dish into one row,
+    so join the price back onto "Kč" and drop the index/allergen lines. The trailing
+    "Týdenní nabídka" (drinks/thali repeated under every day) is cut off.
+    """
+    cleaned: list[str] = []
+    lines = [normalize_whitespace(line) for line in clean_lines(section)]
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        c_line = comparable(line)
+        if c_line == "tydenni nabidka":
+            break
+        next_line = lines[index + 1] if index + 1 < len(lines) else ""
+        if re.fullmatch(r"\d{2,4}", line) and comparable(next_line) in {"kc", "czk"}:
+            cleaned.append(f"{line} Kč")
+            index += 2
+            continue
+        # Row numbers ("1.", "N1:"), allergen codes ("7", "1+7", "7 + 8") and the
+        # English "SOUP" label duplicating "Polévky".
+        if not line or c_line == "soup" or re.fullmatch(r"(?:[A-Z]?\d{1,2}[.:]?|[\d\s,+]+)", line):
+            index += 1
+            continue
+        cleaned.append(line)
+        index += 1
+    return cleaned
+
+
 def parse_buddha(restaurant: Restaurant, target_date: date, timeout_seconds: int) -> MenuResult:
     fetched = fetch_html(
         restaurant.url,
@@ -1243,6 +995,7 @@ def parse_buddha(restaurant: Restaurant, target_date: date, timeout_seconds: int
 
     # Try normal text first, because they may later publish the daily menu as HTML.
     section = extract_current_date_section(lines, target_date) or extract_today_weekday_section(lines, target_date)
+    section = _buddha_clean_section(section)
     if section:
         return restaurant.success(section, source_url=fetched.url, note="Matched today's date/weekday section in top-level HTML.")
 
@@ -1255,6 +1008,7 @@ def parse_buddha(restaurant: Restaurant, target_date: date, timeout_seconds: int
         rendered_soup = make_soup(rendered.text)
         rendered_lines = soup_to_lines(rendered_soup)
         section = extract_current_date_section(rendered_lines, target_date) or extract_today_weekday_section(rendered_lines, target_date)
+        section = _buddha_clean_section(section)
         if section:
             return restaurant.success(
                 section,
@@ -1837,7 +1591,9 @@ RESTAURANTS: list[Restaurant] = [
     # WEDOS.protection (an ALTCHA proof-of-work bot check) that 401s plain requests calls
     # based on TLS fingerprint alone, even with a browser-like User-Agent. A real headless
     # browser passes the automatic JS challenge, so Playwright works.
-    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/", parse_buddha, allow_playwright_fallback=True, key="buddha"),
+    # URL is /home.html since 2026-10-20: the root became a branch picker (Buddha,
+    # Siddhartha, Buddha 2) with no menu on it.
+    Restaurant("Indian Restaurant Buddha", "https://www.indian-restaurant-buddha.cz/home.html", parse_buddha, allow_playwright_fallback=True, key="buddha"),
     # Disabled 2026-07-15: nasolnici.cz intermittently connect-timeouts a plain
     # requests.get() from GitHub Actions runners specifically (never reproduces from a
     # residential network). Adding allow_playwright_fallback=True did not reliably fix it
@@ -1855,7 +1611,6 @@ RESTAURANTS: list[Restaurant] = [
     # WEDOS.protection ALTCHA check as Buddha above; see that comment for details.
     Restaurant("U Třech Čertů Dvořákova", "https://ucertu.cz/dvorakova/", parse_ucertu_dvorakova, allow_playwright_fallback=True, key="certu", aliases=("čertů", "dvorakova", "dvořákova")),
     Restaurant("Charlie's Square", "https://www.charliessquare.cz/", parse_daily_menu_page, key="charlies", aliases=("charlie",)),
-    Restaurant("Singha Thai", "https://www.singhathairestaurant.cz/poledni-menu/", parse_singha, allow_playwright_fallback=True, key="singha", aliases=("single", "singha thai")),
     # Important: use the weekly-menu subpages, not the homepages. The Zomato iframe lives here.
     Restaurant("U Dřevěného orla", "https://www.drevenyorel.cz/cz/page/tydenni-menu.html", parse_zomato_iframe_or_external, allow_playwright_fallback=True, key="orel", aliases=("orla", "drevenyorel", "dřevěný orel")),
     Restaurant("Suzie's", "https://suzies.cz/poledni-menu/", parse_generic_html, key="suzies", aliases=("suzie",)),
