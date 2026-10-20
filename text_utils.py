@@ -339,6 +339,8 @@ def _looks_like_category(line: str) -> bool:
         "hotovky",
         "minutky",
         "ryby",
+        # Charlie's Square heads its mains with this right after the unpriced soup.
+        "tydenni nabidka",
     })
 
     if c_value in exact_categories:
@@ -457,6 +459,11 @@ def structured_menu_rows(lines: Sequence[str], max_items: int | None = None) -> 
         if price_match:
             before_price = normalize_whitespace(line[: price_match.start()]).strip(" :-")
             price = normalize_whitespace(price_match.group("price"))
+            # A self-contained numbered line ("1. 150g Dish 199 Kč") starts a new item, so
+            # pending unpriced text (typically the soup included in the menu price, as in
+            # the Zomato widgets) is its own row rather than a prefix of this dish.
+            if current_parts and LEADING_LIST_NUMBER_RE.match(before_price):
+                flush_unpriced()
             if before_price:
                 current_parts.append(before_price)
             text = _join_item_parts(current_parts)

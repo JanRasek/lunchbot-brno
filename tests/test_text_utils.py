@@ -137,7 +137,26 @@ def test_structured_menu_rows_drops_zomato_widget_header_noise():
     rows = structured_menu_rows(lines)
     assert [(row.kind, row.text, row.price) for row in rows] == [
         ("category", "Polévka", ""),
-        ("item", "Mexická fazolová s hovězím masem - 350g Pečená vepřová žebra", "199 Kč"),
+        ("note", "Mexická fazolová s hovězím masem", ""),
+        ("item", "350g Pečená vepřová žebra", "199 Kč"),
+    ]
+
+
+def test_structured_menu_rows_keeps_unpriced_soup_out_of_weekly_offer():
+    lines = [
+        "Polévka",
+        "0,22l Uzená s masem a kroupami (1,7,9)",
+        "Týdenní nabídka",
+        "MENU 1",
+        "300g DÝŇOVÉ PYRÉ, grilovaná zelenina (3,7)",
+        "175 Kč",
+    ]
+    rows = structured_menu_rows(lines)
+    assert [(row.kind, row.text, row.price) for row in rows] == [
+        ("category", "Polévka", ""),
+        ("note", "0,22l Uzená s masem a kroupami", ""),
+        ("category", "Týdenní nabídka", ""),
+        ("item", "MENU 1 - 300g DÝŇOVÉ PYRÉ, grilovaná zelenina", "175 Kč"),
     ]
 
 
