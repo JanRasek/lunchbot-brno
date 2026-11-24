@@ -719,6 +719,19 @@ def get_zomato_override_for_restaurant(restaurant: Restaurant) -> str:
 
 
 
+def zomato_widget_reports_no_menu(html_text: str) -> bool:
+    """True when Zomato's daily_menu.php answered with its "no menu for today" empty state.
+
+    The widget then renders only e.g. "Pro dnešní den není dostupné žádné menu."
+    inside .empty-state-heading. That is a definitive answer from Zomato, so there is
+    no point in retrying through Playwright: the rendered iframe shows the same thing.
+    """
+    if not html_text:
+        return False
+    soup = make_soup(html_text)
+    return bool(soup.select_one(".empty-state-heading")) and not soup.select_one(".item-name")
+
+
 def build_zomato_success(restaurant: Restaurant, lines: list[str], source_url: str, note: str) -> MenuResult | None:
     if is_rejected_zomato_source_for_restaurant(restaurant, source_url):
         return None
@@ -758,13 +771,19 @@ def parse_zomato_iframe_or_external(restaurant: Restaurant, target_date: date, t
 
     # 0) First try the discovered/hardcoded iframe URLs with plain requests + Referer.
     # This avoids Playwright/Chromium HTTP2 problems on Zomato.
+    no_menu_source = ""
     for iframe_url in list(dict.fromkeys(iframe_links)):
         if looks_like_zomato_widget_loader_url(iframe_url):
             continue
         if not looks_like_zomato_daily_menu_url(iframe_url):
             continue
+        if is_rejected_zomato_source_for_restaurant(restaurant, iframe_url):
+            continue
         try:
             iframe_html = fetch_zomato_daily_widget_with_referer(iframe_url, restaurant.url, timeout_seconds)
+            if zomato_widget_reports_no_menu(iframe_html):
+                no_menu_source = no_menu_source or iframe_url
+                continue
             lines = parse_zomato_daily_widget_html(iframe_html, target_date)
             if lines:
                 result = build_zomato_success(
@@ -778,6 +797,16 @@ def parse_zomato_iframe_or_external(restaurant: Restaurant, target_date: date, t
                 last_error = f"Skipped likely wrong shared Zomato source for {restaurant.name}: {iframe_url}"
         except Exception as exc:
             last_error = str(exc)
+
+    # Zomato answered that the restaurant has not published a menu for today. The
+    # Playwright fallbacks below would render the same empty widget, taking ~90 s
+    # per restaurant, so stop here with a clear message instead.
+    if no_menu_source:
+        return restaurant.failure(
+            "The restaurant has not published today's menu on Zomato (yet).",
+            note=f"Zomato widget says there is no daily menu for today: {no_menu_source}",
+            screenshot_url=no_menu_source,
+        )
 
     # 0b) Then read the iframe DOM from the parent restaurant page. This is the path
     # that matches what you can see in DevTools: the actual menu is inside the iframe.

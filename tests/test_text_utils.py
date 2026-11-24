@@ -231,3 +231,20 @@ def test_format_slack_summary_message_is_compact():
     assert "Hovězí vývar" not in message
     # The report link is sent as its own "report_url" trigger variable, not embedded here.
     assert "📄" not in message
+
+
+def test_zomato_widget_reports_no_menu_detects_empty_state():
+    from restaurants import zomato_widget_reports_no_menu
+
+    empty = (
+        '<div class="main-body"><div align="center">'
+        '<div class="empty-state-heading">Pro dnešní den není dostupné žádné menu.</div>'
+        "</div></div>"
+    )
+    with_menu = (
+        '<div class="item"><div class="item-name">Svíčková</div>'
+        '<div class="item-price-down">165 Kč</div></div>'
+    )
+    assert zomato_widget_reports_no_menu(empty)
+    assert not zomato_widget_reports_no_menu(with_menu)
+    assert not zomato_widget_reports_no_menu("")
